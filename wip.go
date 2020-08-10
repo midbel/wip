@@ -1,14 +1,15 @@
 package wip
 
 import (
-  "errors"
-  "fmt"
-  "os"
+	"errors"
+	"fmt"
+	"os"
+	"strings"
 )
 
 var (
-  ErrKind = errors.New("wip: unsupported indicator")
-  ErrWidth = errors.New("wip: invalid width")
+	ErrKind  = errors.New("wip: unsupported indicator")
+	ErrWidth = errors.New("wip: invalid width")
 )
 
 type Color uint8
@@ -65,10 +66,10 @@ func WithArrow(c byte) Option {
 func WithIndicator(kind IndicatorKind) Option {
 	return func(b *Bar) error {
 		switch kind {
-		case None, Percent, Size, Rate, Time:
+		case None, Percent, Size, Rate, Time, Bounce, Scroll:
 			b.indicator = kind
 		default:
-			return ErrIndicator
+			return ErrKind
 		}
 		return nil
 	}
@@ -133,7 +134,7 @@ func Zero(size int64) (*Bar, error) {
 		space:     space,
 		indicator: Percent,
 		width:     DefaultWidth,
-    total:     size,
+		total:     size,
 	}
 	return &b, nil
 }
@@ -151,14 +152,14 @@ func New(size int64, options ...Option) (*Bar, error) {
 	return b, nil
 }
 
-func DefaultProgress(label string, width, limit int64) *Bar {
+func Default(label string, size int64) *Bar {
 	options := []Option{
 		WithSpace('-'),
 		WithFill('#'),
-		WithWidth(width),
+		WithWidth(DefaultWidth),
 		WithLabel(label),
 	}
-	b, _ := New(limit, options...)
+	b, _ := New(size, options...)
 	return b
 }
 
@@ -171,9 +172,14 @@ func (b *Bar) Incr(n int64) {
 	b.print()
 }
 
-func (b *Bar) Write(b []byte) (int, error) {
-  b.Incr(int64(len(b)))
-  return len(b), nil
+func (b *Bar) Update(n int64) {
+  b.current = n
+  b.print()
+}
+
+func (b *Bar) Write(bs []byte) (int, error) {
+	b.Incr(int64(len(bs)))
+	return len(bs), nil
 }
 
 const row = "%c%-*s%c %3d%%"
@@ -187,9 +193,11 @@ func (b *Bar) print() {
 	if count > 0 && int64(count) < b.width && b.arrow != 0 {
 		fill += string(b.arrow)
 	}
-	fmt.Fprint(os.Stdout, "\r")
+  if count > 0 {
+    fmt.Fprint(os.Stdout, "\r")
+  }
 	if b.label != "" {
-		pat := "%-16s " + row
+		pat := "%-32s " + row
 		fmt.Fprintf(os.Stdout, pat, b.label, b.pre, b.width, fill, b.post, int(frac*100))
 	} else {
 		fmt.Fprintf(os.Stdout, row, b.pre, b.width, fill, b.post, int(frac*100))
