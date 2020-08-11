@@ -3,22 +3,24 @@ package wip
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"time"
 )
 
 var (
-	ErrKind  = errors.New("wip: unsupported indicator")
+	ErrKind  = errors.New("wip: unknown indicator")
 	ErrWidth = errors.New("wip: invalid width")
+	ErrColor = errors.New("wup: unknown color")
 )
 
 const (
-	lsquare = '['
-	rsquare = ']'
-	space   = ' '
-	pound   = '#'
-	percent = '%'
+	lsquare  = '['
+	rsquare  = ']'
+	space    = ' '
+	pound    = '#'
+	percent  = '%'
 	carriage = '\r'
 )
 
@@ -106,16 +108,60 @@ func WithWidth(width int64) Option {
 
 type Color uint8
 
+const (
+	foreground = 38
+	background = 48
+)
+
+func (c Color) background() string {
+	return c.sequence(background)
+}
+
+func (c Color) foreground() string {
+	return c.sequence(foreground)
+}
+
+func (c Color) sequence(n int) string {
+	return fmt.Sprintf("\033[%d;5;%dm", n, c)
+}
+
+const (
+	Black Color = iota
+	DarkRed
+	DarkGreen
+	DarkYellow
+	DarkBlue
+	DarkPurple
+	DarkCyan
+	LightGrey
+	DarkGrey
+	LightRed
+	LightGreen
+	LightYellow
+	LigthBlue
+	LightPurple
+	LightCyan
+	White
+)
+
 func WithBackground(c Color) Option {
 	return func(b *Bar) error {
-		b.back = c
+		if c > White {
+			return ErrColor
+		}
+		b.back.color = c
+		b.back.set = true
 		return nil
 	}
 }
 
 func WithForeground(c Color) Option {
 	return func(b *Bar) error {
-		b.fore = c
+		if c > White {
+			return ErrColor
+		}
+		b.fore.color = c
+		b.fore.set = true
 		return nil
 	}
 }
@@ -134,8 +180,14 @@ type Bar struct {
 	ui    *widget
 
 	indicator IndicatorKind
-	back      Color
-	fore      Color
+	back      struct {
+		color Color
+		set   bool
+	}
+	fore struct {
+		color Color
+		set   bool
+	}
 
 	tcn state
 }
@@ -197,41 +249,63 @@ func (b *Bar) print() {
 	if count > 0 {
 		line.WriteByte(carriage)
 	}
+	b.writeProlog(&line)
+	b.writeProgress(&line, int(count))
+	b.writeEpilog(&line)
+	os.Stdout.Write(line.Bytes())
+}
 
-	if len(b.prolog) != 0 {
-		line.Write(b.prolog)
+func (b *Bar) writeProlog(line *bytes.Buffer) {
+	if len(b.prolog) == 0 {
+		return
+	}
+	line.Write(b.prolog)
+}
+
+func (b *Bar) writeProgress(line *bytes.Buffer, count int) {
+	if b.back.set {
+		line.WriteString(b.back.color.background())
+	}
+	if b.fore.set {
+		line.WriteString(b.fore.color.foreground())
 	}
 	if b.pre != 0 {
 		line.WriteByte(b.pre)
 	}
-	line.Write(b.ui.update(b.char, b.arrow, int(count)))
+	line.Write(b.ui.update(b.char, b.arrow, count))
 	if b.post != 0 {
 		line.WriteByte(b.post)
 	}
-	if len(b.epilog) != 0 {
-		var tmp []byte
-		switch b.indicator {
-		case None:
-		case Percent:
-			tmp = strconv.AppendFloat(tmp, frac*100, 'f', 2, 64)
-			tmp = append(tmp, percent)
-		case Size:
-			tmp = strconv.AppendInt(tmp, b.tcn.Current(), 10)
-		case Rate:
-			tmp = strconv.AppendFloat(tmp, b.tcn.Rate(), 'f', 2, 64)
-		case Elapsed:
-			e := b.tcn.Elapsed()
-			tmp = []byte(e.String())
-		case Remained:
-			e := b.tcn.Remained()
-			tmp = []byte(e.String())
-		}
-		defer fillSlice(b.epilog, space)
-
-		copy(b.epilog[len(b.epilog)-len(tmp):], tmp)
-		line.Write(b.epilog)
+	if b.back.set || b.fore.set {
+		line.WriteString("\x1b[0m")
 	}
-	os.Stdout.Write(line.Bytes())
+}
+
+func (b *Bar) writeEpilog(line *bytes.Buffer) {
+	if len(b.epilog) == 0 {
+		return
+	}
+	var tmp []byte
+	switch b.indicator {
+	case None:
+	case Percent:
+		tmp = strconv.AppendFloat(tmp, b.tcn.Fraction()*100, 'f', 2, 64)
+		tmp = append(tmp, percent)
+	case Size:
+		tmp = strconv.AppendInt(tmp, b.tcn.Current(), 10)
+	case Rate:
+		tmp = strconv.AppendFloat(tmp, b.tcn.Rate(), 'f', 2, 64)
+	case Elapsed:
+		e := b.tcn.Elapsed()
+		tmp = []byte(e.String())
+	case Remained:
+		e := b.tcn.Remained()
+		tmp = []byte(e.String())
+	}
+	defer fillSlice(b.epilog, space)
+
+	copy(b.epilog[len(b.epilog)-len(tmp):], tmp)
+	line.Write(b.epilog)
 }
 
 func makeSlice(size int, fill byte) []byte {
