@@ -12,7 +12,8 @@ import (
 var (
 	ErrKind  = errors.New("wip: unknown indicator")
 	ErrWidth = errors.New("wip: invalid width")
-	ErrColor = errors.New("wup: unknown color")
+	ErrColor = errors.New("wip: unknown color")
+	ErrMode  = errors.New("wip: unknown mode")
 )
 
 const (
@@ -192,15 +193,33 @@ type Bar struct {
 	tcn state
 }
 
+type Mode uint8
+
+const (
+	Regular Mode = iota
+	Scrolling
+	Bouncing
+)
+
 func Bounce(options ...Option) (*Bar, error) {
-	return New(0, options...)
+	return create(0, Bouncing, options...)
 }
 
 func Scroll(options ...Option) (*Bar, error) {
-	return New(0, options...)
+	return create(0, Scrolling, options...)
 }
 
 func New(size int64, options ...Option) (*Bar, error) {
+	return create(size, Regular, options...)
+}
+
+func create(size int64, mode Mode, options ...Option) (*Bar, error) {
+	if mode > Bouncing {
+		return nil, ErrMode
+	}
+	if mode == Regular && size == 0 {
+		return nil, ErrMode
+	}
 	var b Bar
 	b.init()
 	for _, o := range options {
@@ -323,10 +342,14 @@ func fillSlice(b []byte, fill byte) {
 	}
 }
 
+const Refresh = time.Millisecond * 50
+
 type widget struct {
 	buffer []byte
 	offset int
 	space  byte
+
+	when time.Time
 }
 
 func makeWidget(width int, fill byte) *widget {
@@ -347,6 +370,12 @@ func (w *widget) reset(fill byte) {
 }
 
 func (w *widget) update(fill, arrow byte, tcn state) []byte {
+	now := time.Now()
+	if !tcn.Done() && time.Since(w.when) < Refresh {
+		return w.buffer
+	}
+	w.when = now
+
 	if tcn.Indeterminate() {
 		return w.scroll(fill, arrow, tcn)
 	}
@@ -399,6 +428,10 @@ type state struct {
 	current int64
 	total   int64
 	now     time.Time
+}
+
+func (s *state) Done() bool {
+	return s.current == s.total
 }
 
 func (s *state) Indeterminate() bool {
