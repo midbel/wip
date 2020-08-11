@@ -188,6 +188,20 @@ func (b *Bar) Write(bs []byte) (int, error) {
 }
 
 func (b *Bar) print() {
+	var bs []byte
+	if b.tcn.Indeterminate() {
+		bs = b.printIndeterminate()
+	} else {
+		bs = b.printRegular()
+	}
+	os.Stdout.Write(bs)
+}
+
+func (b *Bar) printIndeterminate() []byte {
+	return nil
+}
+
+func (b *Bar) printRegular() []byte {
 	var (
 		frac  = b.tcn.Fraction()
 		count = float64(b.width) * frac
@@ -231,7 +245,7 @@ func (b *Bar) print() {
 		copy(b.epilog[len(b.epilog)-len(tmp):], tmp)
 		line.Write(b.epilog)
 	}
-	os.Stdout.Write(line.Bytes())
+	return line.Bytes()
 }
 
 func makeSlice(size int, fill byte) []byte {
