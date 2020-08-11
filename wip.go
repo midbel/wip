@@ -1,6 +1,7 @@
 package wip
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"strconv"
@@ -21,7 +22,7 @@ const (
 )
 
 const (
-	DefaultWidth = 50
+	DefaultWidth      = 50
 	defaultPrologSize = 24
 	defaultEpilogSize = 16
 )
@@ -127,11 +128,8 @@ type Bar struct {
 	prolog []byte
 	epilog []byte
 
-	width  int64
-	widget struct {
-		buffer []byte
-		offset int
-	}
+	width int64
+	ui    *widget
 
 	indicator IndicatorKind
 	back      Color
@@ -149,6 +147,7 @@ func New(size int64, options ...Option) (*Bar, error) {
 		}
 	}
 	b.Reset(size)
+	b.ui = makeWidget(int(b.width), b.space)
 	return &b, nil
 }
 
@@ -163,9 +162,7 @@ func (b *Bar) init() {
 
 func (b *Bar) Reset(size int64) {
 	b.tcn.Reset(size)
-
-	b.widget.offset = 0
-	b.widget.buffer = makeSlice(int(b.width), b.space)
+	b.ui.reset(b.space)
 }
 
 func (b *Bar) Complete() {
@@ -193,54 +190,43 @@ func (b *Bar) print() {
 		frac  = b.tcn.Fraction()
 		count = float64(b.width) * frac
 	)
-	b.fillBuffer(int(count))
-
-	var tmp []byte
-	switch b.indicator {
-	case None:
-	case Percent:
-		tmp = strconv.AppendFloat(tmp, b.tcn.Fraction()*100, 'f', 2, 64)
-		tmp = append(tmp, percent)
-	case Size:
-		tmp = strconv.AppendInt(tmp, b.tcn.Current(), 10)
-	case Rate:
-		tmp = strconv.AppendFloat(tmp, b.tcn.Rate(), 'f', 2, 64)
-	case Time:
-		e := b.tcn.Elapsed()
-		tmp = []byte(e.String())
-	}
 
 	if count > 0 {
 		os.Stdout.WriteString("\r")
 	}
 
+	var line bytes.Buffer
 	if len(b.prolog) != 0 {
-		os.Stdout.Write(b.prolog)
+		line.Write(b.prolog)
 	}
 	if b.pre != 0 {
-		os.Stdout.WriteString(string(b.pre))
+		line.WriteByte(b.pre)
 	}
-	os.Stdout.Write(b.widget.buffer)
+	line.Write(b.ui.update(b.char, b.arrow, int(count)))
 	if b.post != 0 {
-		os.Stdout.WriteString(string(b.post))
+		line.WriteByte(b.post)
 	}
 	if len(b.epilog) != 0 {
+		var tmp []byte
+		switch b.indicator {
+		case None:
+		case Percent:
+			tmp = strconv.AppendFloat(tmp, frac*100, 'f', 2, 64)
+			tmp = append(tmp, percent)
+		case Size:
+			tmp = strconv.AppendInt(tmp, b.tcn.Current(), 10)
+		case Rate:
+			tmp = strconv.AppendFloat(tmp, b.tcn.Rate(), 'f', 2, 64)
+		case Time:
+			e := b.tcn.Elapsed()
+			tmp = []byte(e.String())
+		}
 		defer fillSlice(b.epilog, space)
 
 		copy(b.epilog[len(b.epilog)-len(tmp):], tmp)
-		os.Stdout.Write(b.epilog)
+		line.Write(b.epilog)
 	}
-}
-
-func (b *Bar) fillBuffer(count int) {
-	for i := b.widget.offset; i < count; i++ {
-		b.widget.buffer[i] = b.char
-	}
-	b.widget.offset = int(count)
-
-	if count > 0 && int64(count) < b.width && b.arrow != 0 {
-		b.widget.buffer[b.widget.offset] = b.arrow
-	}
+	os.Stdout.Write(line.Bytes())
 }
 
 func makeSlice(size int, fill byte) []byte {
@@ -253,6 +239,43 @@ func fillSlice(b []byte, fill byte) {
 	for i := range b {
 		b[i] = fill
 	}
+}
+
+type widget struct {
+	buffer []byte
+	offset int
+}
+
+func makeWidget(width int, fill byte) *widget {
+	w := widget{
+		offset: 0,
+		buffer: makeSlice(width, fill),
+	}
+	return &w
+}
+
+func (w *widget) reset(fill byte) {
+	if w == nil {
+		return
+	}
+	fillSlice(w.buffer, fill)
+	w.offset = 0
+}
+
+func (w *widget) update(fill, arrow byte, count int) []byte {
+	for i := w.offset; i < count; i++ {
+		w.buffer[i] = fill
+	}
+	w.offset = count
+
+	if count > 0 && count < len(w.buffer) && arrow != 0 {
+		w.buffer[w.offset] = arrow
+	}
+	return w.buffer
+}
+
+func (w *widget) bytes() []byte {
+	return w.buffer
 }
 
 type state struct {
@@ -271,9 +294,26 @@ func (s *state) Reset(total int64) {
 	s.now = time.Now()
 }
 
-func (s *state) Complete()    { s.current = s.total }
-func (s *state) Set(n int64)  { s.current = n }
-func (s *state) Incr(n int64) { s.current += n }
+func (s *state) Complete() {
+	if s == nil {
+		return
+	}
+	s.current = s.total
+}
+
+func (s *state) Set(n int64) {
+	if s == nil {
+		return
+	}
+	s.current = n
+}
+
+func (s *state) Incr(n int64) {
+	if s == nil {
+		return
+	}
+	s.current += n
+}
 
 func (s *state) Current() int64 {
 	return s.current
@@ -285,6 +325,9 @@ func (s *state) Elapsed() time.Duration {
 
 func (s *state) Rate() float64 {
 	e := s.Elapsed()
+	if e.Seconds() == 0 {
+		return float64(s.total)
+	}
 	return float64(s.current) / e.Seconds()
 }
 
