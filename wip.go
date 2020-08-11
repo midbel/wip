@@ -34,7 +34,8 @@ const (
 	Percent
 	Size
 	Rate
-	Time
+	Elapsed
+	Remained
 	// Bounce
 	// Scroll
 )
@@ -80,7 +81,7 @@ func WithArrow(c byte) Option {
 func WithIndicator(kind IndicatorKind) Option {
 	return func(b *Bar) error {
 		switch kind {
-		case None, Percent, Size, Rate, Time:
+		case None, Percent, Size, Rate, Elapsed, Remained:
 			b.indicator = kind
 			if kind != None {
 				b.epilog = makeSlice(defaultEpilogSize, space)
@@ -217,8 +218,11 @@ func (b *Bar) print() {
 			tmp = strconv.AppendInt(tmp, b.tcn.Current(), 10)
 		case Rate:
 			tmp = strconv.AppendFloat(tmp, b.tcn.Rate(), 'f', 2, 64)
-		case Time:
+		case Elapsed:
 			e := b.tcn.Elapsed()
+			tmp = []byte(e.String())
+		case Remained:
+			e := b.tcn.Remained()
 			tmp = []byte(e.String())
 		}
 		defer fillSlice(b.epilog, space)
@@ -321,6 +325,19 @@ func (s *state) Current() int64 {
 
 func (s *state) Elapsed() time.Duration {
 	return time.Since(s.now)
+}
+
+func (s *state) Estimated() time.Duration {
+	r := float64(s.total) / s.Rate()
+	return time.Duration(r) * time.Second
+}
+
+func (s *state) Remained() time.Duration {
+	r := s.Estimated() - s.Elapsed()
+	if r < 0 {
+		r = 0
+	}
+	return r
 }
 
 func (s *state) Rate() float64 {
