@@ -19,6 +19,7 @@ const (
 	space   = ' '
 	pound   = '#'
 	percent = '%'
+	carriage = '\r'
 )
 
 const (
@@ -192,11 +193,11 @@ func (b *Bar) print() {
 		count = float64(b.width) * frac
 	)
 
+	var line bytes.Buffer
 	if count > 0 {
-		os.Stdout.WriteString("\r")
+		line.WriteByte(carriage)
 	}
 
-	var line bytes.Buffer
 	if len(b.prolog) != 0 {
 		line.Write(b.prolog)
 	}
