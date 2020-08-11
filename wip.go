@@ -342,7 +342,7 @@ func fillSlice(b []byte, fill byte) {
 	}
 }
 
-const Refresh = time.Millisecond * 50
+const Refresh = time.Millisecond * 75
 
 type widget struct {
 	buffer []byte
@@ -370,13 +370,16 @@ func (w *widget) reset(fill byte) {
 }
 
 func (w *widget) update(fill, arrow byte, tcn state) []byte {
-	now := time.Now()
-	if !tcn.Done() && time.Since(w.when) < Refresh {
+	if tcn.Done() {
+		fillSlice(w.buffer, fill)
 		return w.buffer
 	}
-	w.when = now
-
 	if tcn.Indeterminate() {
+		now := time.Now()
+		if !tcn.Done() && time.Since(w.when) < Refresh {
+			return w.buffer
+		}
+		w.when = now
 		return w.scroll(fill, arrow, tcn)
 	}
 	return w.progress(fill, arrow, tcn)
