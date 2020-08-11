@@ -193,6 +193,9 @@ type Bar struct {
 }
 
 func New(size int64, options ...Option) (*Bar, error) {
+	if size <= 0 {
+		return nil, fmt.Errorf("wip: indeterminate not yet supported")
+	}
 	var b Bar
 	b.init()
 	for _, o := range options {
