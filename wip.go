@@ -26,7 +26,7 @@ const (
 
 const (
 	DefaultWidth      = 50
-	defaultPrologSize = 48
+	defaultPrologSize = 32
 	defaultEpilogSize = 16
 )
 
@@ -192,10 +192,15 @@ type Bar struct {
 	tcn state
 }
 
+func Bounce(options ...Option) (*Bar, error) {
+	return New(0, options...)
+}
+
+func Scroll(options ...Option) (*Bar, error) {
+	return New(0, options...)
+}
+
 func New(size int64, options ...Option) (*Bar, error) {
-	if size <= 0 {
-		return nil, fmt.Errorf("wip: indeterminate not yet supported")
-	}
 	var b Bar
 	b.init()
 	for _, o := range options {
@@ -243,17 +248,12 @@ func (b *Bar) Write(bs []byte) (int, error) {
 }
 
 func (b *Bar) print() {
-	var (
-		frac  = b.tcn.Fraction()
-		count = float64(b.width) * frac
-	)
-
 	var line bytes.Buffer
-	if count > 0 {
+	if b.tcn.Current() > 0 {
 		line.WriteByte(carriage)
 	}
 	b.writeProlog(&line)
-	b.writeProgress(&line, int(count))
+	b.writeProgress(&line)
 	b.writeEpilog(&line)
 	os.Stdout.Write(line.Bytes())
 }
@@ -265,7 +265,7 @@ func (b *Bar) writeProlog(line *bytes.Buffer) {
 	line.Write(b.prolog)
 }
 
-func (b *Bar) writeProgress(line *bytes.Buffer, count int) {
+func (b *Bar) writeProgress(line *bytes.Buffer) {
 	if b.back.set {
 		line.WriteString(b.back.color.background())
 	}
@@ -275,7 +275,7 @@ func (b *Bar) writeProgress(line *bytes.Buffer, count int) {
 	if b.pre != 0 {
 		line.WriteByte(b.pre)
 	}
-	line.Write(b.ui.update(b.char, b.arrow, count))
+	line.Write(b.ui.update(b.char, b.arrow, b.tcn))
 	if b.post != 0 {
 		line.WriteByte(b.post)
 	}
@@ -326,12 +326,14 @@ func fillSlice(b []byte, fill byte) {
 type widget struct {
 	buffer []byte
 	offset int
+	space  byte
 }
 
 func makeWidget(width int, fill byte) *widget {
 	w := widget{
 		offset: 0,
 		buffer: makeSlice(width, fill),
+		space:  fill,
 	}
 	return &w
 }
@@ -344,7 +346,19 @@ func (w *widget) reset(fill byte) {
 	w.offset = 0
 }
 
-func (w *widget) update(fill, arrow byte, count int) []byte {
+func (w *widget) update(fill, arrow byte, tcn state) []byte {
+	if tcn.Indeterminate() {
+		return w.scroll(fill, arrow, tcn)
+	}
+	return w.progress(fill, arrow, tcn)
+}
+
+func (w *widget) progress(fill, arrow byte, tcn state) []byte {
+	var (
+		part  = float64(len(w.buffer)) * tcn.Fraction()
+		count = int(part)
+	)
+
 	for i := w.offset; i < count; i++ {
 		w.buffer[i] = fill
 	}
@@ -354,6 +368,27 @@ func (w *widget) update(fill, arrow byte, count int) []byte {
 		w.buffer[w.offset] = arrow
 	}
 	return w.buffer
+}
+
+func (w *widget) scroll(fill, _ byte, tcn state) []byte {
+	length := len(w.buffer) / 10
+	if length == 0 {
+		length++
+	}
+	w.buffer[w.offset] = fill
+	if w.offset >= 1 {
+		w.buffer[w.offset-1] = w.space
+	}
+	w.offset++
+	if w.offset >= len(w.buffer) {
+		w.offset = 0
+		w.buffer[len(w.buffer)-1] = w.space
+	}
+	return w.buffer
+}
+
+func (w *widget) bounce(fill, arrow byte, tcn state) []byte {
+	return nil
 }
 
 func (w *widget) bytes() []byte {
@@ -380,7 +415,11 @@ func (s *state) Complete() {
 	if s == nil {
 		return
 	}
-	s.current = s.total
+	if s.Indeterminate() {
+		s.total = s.current
+	} else {
+		s.current = s.total
+	}
 }
 
 func (s *state) Set(n int64) {
@@ -408,13 +447,16 @@ func (s *state) Elapsed() time.Duration {
 }
 
 func (s *state) Estimated() time.Duration {
+	if s.Indeterminate() {
+		return 0
+	}
 	r := float64(s.total) / s.Rate()
 	return time.Duration(r) * time.Second
 }
 
 func (s *state) Remained() time.Duration {
 	r := s.Estimated() - s.Elapsed()
-	if r < 0 {
+	if r <= 0 {
 		r = 0
 	}
 	return r
@@ -429,5 +471,20 @@ func (s *state) Rate() float64 {
 }
 
 func (s *state) Fraction() float64 {
+	if s.Indeterminate() {
+		return 0
+	}
 	return float64(s.current) / float64(s.total)
+}
+
+func formatDuration(d time.Duration) []byte {
+	return nil
+}
+
+func formatSize(d int64) []byte {
+	return nil
+}
+
+func formatRate(d int64) []byte {
+	return nil
 }
