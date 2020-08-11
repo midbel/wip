@@ -26,7 +26,7 @@ const (
 
 const (
 	DefaultWidth      = 50
-	defaultPrologSize = 24
+	defaultPrologSize = 48
 	defaultEpilogSize = 16
 )
 
