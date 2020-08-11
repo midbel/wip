@@ -387,7 +387,9 @@ func (s *state) Set(n int64) {
 	if s == nil {
 		return
 	}
-	s.current = n
+	if n > s.current {
+		s.current = n
+	}
 }
 
 func (s *state) Incr(n int64) {
