@@ -213,10 +213,12 @@ type Bar struct {
 }
 
 func Bounce(options ...Option) (*Bar, error) {
+	options = append(options, WithMode(Bouncing))
 	return create(0, options...)
 }
 
 func Scroll(options ...Option) (*Bar, error) {
+	options = append(options, WithMode(Scrolling))
 	return create(0, options...)
 }
 
