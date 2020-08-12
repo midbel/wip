@@ -167,6 +167,23 @@ func WithForeground(c Color) Option {
 	}
 }
 
+type Mode uint8
+
+const (
+	Regular Mode = iota
+	Scrolling
+	Bouncing
+)
+
+// func WithMode(m Mode) Option {
+// 	return func(b *Bar) error {
+// 		if m > Bouncing {
+// 			return ErrMode
+// 		}
+// 		return nil
+// 	}
+// }
+
 type Bar struct {
 	pre   byte
 	post  byte
@@ -192,14 +209,6 @@ type Bar struct {
 
 	tcn state
 }
-
-type Mode uint8
-
-const (
-	Regular Mode = iota
-	Scrolling
-	Bouncing
-)
 
 func Bounce(options ...Option) (*Bar, error) {
 	return create(0, Bouncing, options...)
@@ -243,7 +252,7 @@ func (b *Bar) init() {
 
 func (b *Bar) Reset(size int64) {
 	b.tcn.Reset(size)
-	b.ui.reset(b.space)
+	b.ui.reset()
 }
 
 func (b *Bar) Complete() {
@@ -342,7 +351,7 @@ func fillSlice(b []byte, fill byte) {
 	}
 }
 
-const Refresh = time.Millisecond * 100
+const Refresh = time.Millisecond * 10
 
 type widget struct {
 	buffer []byte
@@ -360,7 +369,7 @@ func makeWidget(width int, fill byte, mode Mode) *widget {
 		offset: 0,
 		buffer: makeSlice(width, fill),
 		space:  fill,
-		length: width / 10,
+		length: width / 4,
 		mode:   mode,
 	}
 	if w.length == 0 && width > 0 {
@@ -369,12 +378,13 @@ func makeWidget(width int, fill byte, mode Mode) *widget {
 	return &w
 }
 
-func (w *widget) reset(fill byte) {
+func (w *widget) reset() {
 	if w == nil {
 		return
 	}
-	fillSlice(w.buffer, fill)
 	w.offset = 0
+	w.when = time.Now()
+	fillSlice(w.buffer, w.space)
 }
 
 func (w *widget) update(fill, arrow byte, tcn state) []byte {
@@ -388,18 +398,19 @@ func (w *widget) update(fill, arrow byte, tcn state) []byte {
 			return w.buffer
 		}
 		w.when = now
-		if w.mode == Bouncing {
-			w.bounce(fill)
-		} else {
-			w.scroll(fill)
-		}
-	} else {
+	}
+	switch w.mode {
+	case Bouncing:
+		w.bounce(fill)
+	case Scrolling:
+		w.scroll(fill)
+	default:
 		w.progress(fill, arrow, tcn)
 	}
 	return w.buffer
 }
 
-func (w *widget) progress(fill, arrow byte, tcn state) []byte {
+func (w *widget) progress(fill, arrow byte, tcn state) {
 	var (
 		part  = float64(len(w.buffer)) * tcn.Fraction()
 		count = int(part)
@@ -413,48 +424,52 @@ func (w *widget) progress(fill, arrow byte, tcn state) []byte {
 	if count > 0 && count < len(w.buffer) && arrow != 0 {
 		w.buffer[w.offset] = arrow
 	}
-	return w.buffer
 }
 
-func (w *widget) scroll(fill byte) []byte {
-	w.nextSlot(fill, 0)
-	return w.buffer
-}
-
-func (w *widget) bounce(fill byte) []byte {
-	if w.offset >= 0 {
-		w.nextSlot(fill, -1)
-	} else {
-		w.prevSlot(fill)
+func (w *widget) scroll(fill byte) {
+	if w.offset < w.length {
+		w.buffer[w.offset] = fill
+		w.offset++
+		return
 	}
-	return w.buffer
-}
 
-func (w *widget) nextSlot(fill byte, reset int) {
-	if w.offset == 0 {
-		w.buffer[len(w.buffer)-1] = w.space
-		w.buffer[1] = w.space
+	if n := len(w.buffer); w.offset >= n {
+		diff := w.offset - n
+		w.buffer[diff] = fill
+		w.buffer[n-w.length+diff] = w.space
+
+		w.offset++
+		if w.offset-n == w.length {
+			w.offset = w.length
+		}
+		return
 	}
+
 	w.buffer[w.offset] = fill
-	if w.offset >= 1 {
-		w.buffer[w.offset-1] = w.space
-	}
+	w.buffer[w.offset-w.length] = w.space
 	w.offset++
-	if w.offset >= len(w.buffer) {
-		// w.buffer[len(w.buffer)-1] = w.space
-		w.offset = reset
-	}
 }
 
-func (w *widget) prevSlot(fill byte) {
-	offset := len(w.buffer) + w.offset - 1
-	w.buffer[offset] = fill
-	if offset < len(w.buffer)-1 {
-		w.buffer[offset+1] = w.space
-	}
-	w.offset--
-	if -w.offset == len(w.buffer)-1 {
-		w.offset = 0
+func (w *widget) bounce(fill byte) {
+	if w.offset >= 0 {
+		if w.offset < w.length {
+			w.buffer[w.offset] = fill
+			w.offset++
+			return
+		}
+		w.buffer[w.offset] = fill
+		w.buffer[w.offset-w.length] = w.space
+		w.offset++
+		if w.offset >= len(w.buffer) {
+			w.offset = -(len(w.buffer) - w.length)
+		}
+	} else {
+		w.buffer[-w.offset-1] = fill
+		w.buffer[-w.offset+w.length-1] = w.space
+		w.offset++
+		if w.offset == 0 {
+			w.offset += w.length
+		}
 	}
 }
 
