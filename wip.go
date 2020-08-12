@@ -175,14 +175,15 @@ const (
 	Bouncing
 )
 
-// func WithMode(m Mode) Option {
-// 	return func(b *Bar) error {
-// 		if m > Bouncing {
-// 			return ErrMode
-// 		}
-// 		return nil
-// 	}
-// }
+func WithMode(m Mode) Option {
+	return func(b *Bar) error {
+		if m > Bouncing {
+			return ErrMode
+		}
+		b.mode = m
+		return nil
+	}
+}
 
 type Bar struct {
 	pre   byte
@@ -195,6 +196,7 @@ type Bar struct {
 	epilog []byte
 
 	width int64
+	mode  Mode
 	ui    *widget
 
 	indicator IndicatorKind
@@ -211,24 +213,18 @@ type Bar struct {
 }
 
 func Bounce(options ...Option) (*Bar, error) {
-	return create(0, Bouncing, options...)
+	return create(0, options...)
 }
 
 func Scroll(options ...Option) (*Bar, error) {
-	return create(0, Scrolling, options...)
+	return create(0, options...)
 }
 
 func New(size int64, options ...Option) (*Bar, error) {
-	return create(size, Regular, options...)
+	return create(size, options...)
 }
 
-func create(size int64, mode Mode, options ...Option) (*Bar, error) {
-	if mode > Bouncing {
-		return nil, ErrMode
-	}
-	if mode == Regular && size == 0 {
-		return nil, ErrMode
-	}
+func create(size int64, options ...Option) (*Bar, error) {
 	var b Bar
 	b.init()
 	for _, o := range options {
@@ -237,7 +233,10 @@ func create(size int64, mode Mode, options ...Option) (*Bar, error) {
 		}
 	}
 	b.Reset(size)
-	b.ui = makeWidget(int(b.width), b.space, mode)
+	if b.tcn.Indeterminate() && b.mode == Regular {
+		return nil, ErrMode
+	}
+	b.ui = makeWidget(int(b.width), b.space, b.mode)
 	return &b, nil
 }
 
@@ -248,6 +247,7 @@ func (b *Bar) init() {
 	b.space = space
 	b.indicator = Percent
 	b.width = DefaultWidth
+	b.mode = Regular
 }
 
 func (b *Bar) Reset(size int64) {
@@ -351,7 +351,7 @@ func fillSlice(b []byte, fill byte) {
 	}
 }
 
-const Refresh = time.Millisecond * 10
+const Refresh = time.Millisecond * 50
 
 type widget struct {
 	buffer []byte
@@ -392,13 +392,11 @@ func (w *widget) update(fill, arrow byte, tcn state) []byte {
 		fillSlice(w.buffer, fill)
 		return w.buffer
 	}
-	if tcn.Indeterminate() {
-		now := time.Now()
-		if !tcn.Done() && time.Since(w.when) < Refresh {
-			return w.buffer
-		}
-		w.when = now
+	now := time.Now()
+	if !tcn.Done() && time.Since(w.when) < Refresh {
+		return w.buffer
 	}
+	w.when = now
 	switch w.mode {
 	case Bouncing:
 		w.bounce(fill)

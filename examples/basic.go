@@ -11,6 +11,28 @@ import (
 	"github.com/midbel/wip"
 )
 
+type Mode struct {
+	Value wip.Mode
+}
+
+func (m *Mode) Set(str string) error {
+	switch strings.ToLower(str) {
+	case "regular", "":
+		m.Value = wip.Regular
+	case "bounce", "bouncing":
+		m.Value = wip.Bouncing
+	case "scroll", "scrolling":
+		m.Value = wip.Scrolling
+	default:
+		return fmt.Errorf("%s: unknown mode", str)
+	}
+	return nil
+}
+
+func (m *Mode) String() string {
+	return "mode"
+}
+
 type Color struct {
 	Value wip.Color
 }
@@ -75,27 +97,27 @@ func (i *Indicator) String() string {
 
 func main() {
 	var (
-		kind   = Indicator{Value: wip.Percent}
-		fore   = Color{Value: wip.White}
-		back   = Color{Value: wip.DarkGreen}
-		width  = int64(wip.DefaultWidth)
-		scroll = false
+		kind  = Indicator{Value: wip.Percent}
+		fore  = Color{Value: wip.White}
+		back  = Color{Value: wip.Black}
+		width = int64(wip.DefaultWidth)
+		mode  = Mode{Value: wip.Regular}
 	)
 	flag.Var(&kind, "k", "indicator type")
 	flag.Var(&fore, "f", "foreground color")
 	flag.Var(&back, "b", "background color")
+	flag.Var(&mode, "m", "mode")
 	flag.Int64Var(&width, "w", width, "bar width")
-	flag.BoolVar(&scroll, "i", scroll, "indeterminate")
 	flag.Parse()
 
 	for _, a := range flag.Args() {
-		options := MakeOptions(a, kind, back, fore, width)
-		readFile(a, scroll, options)
+		options := MakeOptions(a, kind, back, fore, mode, width)
+		readFile(a, options)
 		fmt.Println()
 	}
 }
 
-func readFile(a string, scroll bool, options []wip.Option) {
+func readFile(a string, options []wip.Option) {
 	r, err := os.Open(a)
 	if err != nil {
 		return
@@ -107,27 +129,12 @@ func readFile(a string, scroll bool, options []wip.Option) {
 		return
 	}
 
-	var bar *wip.Bar
-	if scroll {
-		bar = Indeterminate(options)
-	} else {
-		bar = Create(i.Size(), options)
-	}
+	bar, _ := wip.New(i.Size(), options...)
 	io.CopyBuffer(bar, r, make([]byte, 1024))
 	bar.Complete()
 }
 
-func Create(size int64, options []wip.Option) *wip.Bar {
-	bar, _ := wip.New(size, options...)
-	return bar
-}
-
-func Indeterminate(options []wip.Option) *wip.Bar {
-	bar, _ := wip.Bounce(options...)
-	return bar
-}
-
-func MakeOptions(file string, kind Indicator, back, fore Color, width int64) []wip.Option {
+func MakeOptions(file string, kind Indicator, back, fore Color, mode Mode, width int64) []wip.Option {
 	return []wip.Option{
 		wip.WithLabel(filepath.Base(file)),
 		wip.WithWidth(width),
@@ -137,5 +144,6 @@ func MakeOptions(file string, kind Indicator, back, fore Color, width int64) []w
 		wip.WithIndicator(kind.Value),
 		wip.WithForeground(fore.Value),
 		wip.WithBackground(back.Value),
+		wip.WithMode(mode.Value),
 	}
 }
