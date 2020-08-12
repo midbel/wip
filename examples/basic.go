@@ -123,7 +123,7 @@ func Create(size int64, options []wip.Option) *wip.Bar {
 }
 
 func Indeterminate(options []wip.Option) *wip.Bar {
-	bar, _ := wip.Scroll(options...)
+	bar, _ := wip.Bounce(options...)
 	return bar
 }
 

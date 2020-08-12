@@ -228,7 +228,7 @@ func create(size int64, mode Mode, options ...Option) (*Bar, error) {
 		}
 	}
 	b.Reset(size)
-	b.ui = makeWidget(int(b.width), b.space)
+	b.ui = makeWidget(int(b.width), b.space, mode)
 	return &b, nil
 }
 
@@ -342,21 +342,29 @@ func fillSlice(b []byte, fill byte) {
 	}
 }
 
-const Refresh = time.Millisecond * 75
+const Refresh = time.Millisecond * 100
 
 type widget struct {
 	buffer []byte
 	offset int
-	space  byte
 
-	when time.Time
+	space  byte
+	length int
+	when   time.Time
+
+	mode Mode
 }
 
-func makeWidget(width int, fill byte) *widget {
+func makeWidget(width int, fill byte, mode Mode) *widget {
 	w := widget{
 		offset: 0,
 		buffer: makeSlice(width, fill),
 		space:  fill,
+		length: width / 10,
+		mode:   mode,
+	}
+	if w.length == 0 && width > 0 {
+		w.length++
 	}
 	return &w
 }
@@ -380,9 +388,15 @@ func (w *widget) update(fill, arrow byte, tcn state) []byte {
 			return w.buffer
 		}
 		w.when = now
-		return w.scroll(fill, arrow, tcn)
+		if w.mode == Bouncing {
+			w.bounce(fill)
+		} else {
+			w.scroll(fill)
+		}
+	} else {
+		w.progress(fill, arrow, tcn)
 	}
-	return w.progress(fill, arrow, tcn)
+	return w.buffer
 }
 
 func (w *widget) progress(fill, arrow byte, tcn state) []byte {
@@ -402,10 +416,24 @@ func (w *widget) progress(fill, arrow byte, tcn state) []byte {
 	return w.buffer
 }
 
-func (w *widget) scroll(fill, _ byte, tcn state) []byte {
-	length := len(w.buffer) / 10
-	if length == 0 {
-		length++
+func (w *widget) scroll(fill byte) []byte {
+	w.nextSlot(fill, 0)
+	return w.buffer
+}
+
+func (w *widget) bounce(fill byte) []byte {
+	if w.offset >= 0 {
+		w.nextSlot(fill, -1)
+	} else {
+		w.prevSlot(fill)
+	}
+	return w.buffer
+}
+
+func (w *widget) nextSlot(fill byte, reset int) {
+	if w.offset == 0 {
+		w.buffer[len(w.buffer)-1] = w.space
+		w.buffer[1] = w.space
 	}
 	w.buffer[w.offset] = fill
 	if w.offset >= 1 {
@@ -413,14 +441,21 @@ func (w *widget) scroll(fill, _ byte, tcn state) []byte {
 	}
 	w.offset++
 	if w.offset >= len(w.buffer) {
-		w.offset = 0
-		w.buffer[len(w.buffer)-1] = w.space
+		// w.buffer[len(w.buffer)-1] = w.space
+		w.offset = reset
 	}
-	return w.buffer
 }
 
-func (w *widget) bounce(fill, arrow byte, tcn state) []byte {
-	return nil
+func (w *widget) prevSlot(fill byte) {
+	offset := len(w.buffer) + w.offset - 1
+	w.buffer[offset] = fill
+	if offset < len(w.buffer)-1 {
+		w.buffer[offset+1] = w.space
+	}
+	w.offset--
+	if -w.offset == len(w.buffer)-1 {
+		w.offset = 0
+	}
 }
 
 func (w *widget) bytes() []byte {
