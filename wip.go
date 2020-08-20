@@ -562,8 +562,12 @@ func (s *state) Remained() time.Duration {
 
 func (s *state) Rate() float64 {
 	e := s.Elapsed()
-	if e.Seconds() == 0 {
-		return float64(s.total) * (e.Seconds() / float64(e.Milliseconds()))
+	if e.Seconds() < 1 {
+		ms := e.Milliseconds()
+		if ms >= 1 {
+			return float64(s.current) *  float64(ms)
+		}
+		return float64(s.total)*1000
 	}
 	return float64(s.current) / e.Seconds()
 }

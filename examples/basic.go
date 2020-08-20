@@ -123,7 +123,7 @@ func main() {
 		}
 		options := MakeOptions(file, kind, back, fore, mode, width)
 		err = readFile(file, size, buffer, options)
-		if err != nil {
+		if err == nil {
 			fmt.Println()
 		}
 		return err
