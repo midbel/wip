@@ -212,6 +212,8 @@ type Bar struct {
 	tcn state
 }
 
+var reset = []byte("\x1b[0m")
+
 func Bounce(options ...Option) (*Bar, error) {
 	options = append(options, WithMode(Bouncing))
 	return create(0, options...)
@@ -310,7 +312,7 @@ func (b *Bar) writeProgress(line *bytes.Buffer) {
 		line.WriteByte(b.post)
 	}
 	if b.back.set || b.fore.set {
-		line.WriteString("\x1b[0m")
+		line.Write(reset)
 	}
 }
 
@@ -325,9 +327,10 @@ func (b *Bar) writeEpilog(line *bytes.Buffer) {
 		tmp = strconv.AppendFloat(tmp, b.tcn.Fraction()*100, 'f', 2, 64)
 		tmp = append(tmp, percent)
 	case Size:
-		tmp = strconv.AppendInt(tmp, b.tcn.Current(), 10)
+		tmp = formatSize(float64(b.tcn.Current()))
 	case Rate:
-		tmp = strconv.AppendFloat(tmp, b.tcn.Rate(), 'f', 2, 64)
+		tmp = formatRate(b.tcn.Rate())
+		// tmp = strconv.AppendFloat(tmp, b.tcn.Rate(), 'f', 2, 64)
 	case Elapsed:
 		e := b.tcn.Elapsed()
 		tmp = []byte(e.String())
@@ -551,7 +554,7 @@ func (s *state) Remained() time.Duration {
 func (s *state) Rate() float64 {
 	e := s.Elapsed()
 	if e.Seconds() == 0 {
-		return float64(s.total)
+		return float64(s.total) * (e.Seconds() / float64(e.Milliseconds()))
 	}
 	return float64(s.current) / e.Seconds()
 }
@@ -567,10 +570,38 @@ func formatDuration(d time.Duration) []byte {
 	return nil
 }
 
-func formatSize(d int64) []byte {
-	return nil
+var units = [][]byte{
+	[]byte("KB"),
+	[]byte("MB"),
+	[]byte("GB"),
 }
 
-func formatRate(d int64) []byte {
-	return nil
+func formatSize(d float64) []byte {
+	var (
+		size  = 1024.0
+		coeff = size
+		tmp   = make([]byte, 0, 64)
+	)
+	format := func(size float64, unit []byte) []byte {
+		z := float64(d) / float64(size/coeff)
+		tmp = strconv.AppendFloat(tmp, z, 'f', 2, 64)
+		return append(tmp, unit...)
+	}
+	if d < size {
+		tmp = strconv.AppendInt(tmp, int64(d), 10)
+		return append(tmp, 'B')
+	}
+	for i := range units {
+		size *= coeff
+		if d < size {
+			return format(size, units[i])
+		}
+	}
+	size *= coeff
+	return format(size, []byte("TB"))
+}
+
+func formatRate(d float64) []byte {
+	size := formatSize(d)
+	return append(size, []byte("/s")...)
 }
