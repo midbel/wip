@@ -341,7 +341,11 @@ func (b *Bar) writeEpilog(line *bytes.Buffer) {
 	case Elapsed:
 		tmp = formatDuration(b.tcn.Elapsed())
 	case Remained:
-		tmp = formatDuration(b.tcn.Remained())
+		if b.tcn.Indeterminate() {
+			tmp = []byte("--")
+		} else {
+			tmp = formatDuration(b.tcn.Remained())
+		}
 	}
 	defer fillSlice(b.epilog, space)
 

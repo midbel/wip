@@ -122,37 +122,42 @@ func main() {
 			return err
 		}
 		options := MakeOptions(file, kind, back, fore, mode, width)
-		readFile(file, size, buffer, options)
-		fmt.Println()
-		return nil
+		err = readFile(file, size, buffer, options)
+		if err != nil {
+			fmt.Println()
+		}
+		return err
 	})
 }
 
-func readFile(file string, size int, buffer bool, options []wip.Option) {
+func readFile(file string, size int, buffer bool, options []wip.Option) error {
 	if size <= 0 {
 		size = DefaultBufferSize
 	}
 	r, err := os.Open(file)
 	if err != nil {
-		return
+		return err
 	}
 	defer r.Close()
 
 	i, err := r.Stat()
 	if err != nil {
-		return
+		return err
 	}
 
 	bar, err := wip.New(i.Size(), options...)
 	if err != nil {
-		return
+		return nil
 	}
 	var rs io.Reader = r
 	if buffer {
 		rs = bufio.NewReader(rs)
 	}
-	io.CopyBuffer(bar, rs, make([]byte, size))
+	if _, err := io.CopyBuffer(bar, rs, make([]byte, size)); err != nil {
+		return err
+	}
 	bar.Complete()
+	return nil
 }
 
 func MakeOptions(file string, kind Indicator, back, fore Color, mode Mode, width int64) []wip.Option {
