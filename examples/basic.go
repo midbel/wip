@@ -95,30 +95,41 @@ func (i *Indicator) String() string {
 	return "indicator"
 }
 
+const DefaultBufferSize = 1024
+
 func main() {
 	var (
-		kind  = Indicator{Value: wip.Percent}
-		fore  = Color{Value: wip.White}
-		back  = Color{Value: wip.Black}
-		width = int64(wip.DefaultWidth)
-		mode  = Mode{Value: wip.Regular}
+		kind   = Indicator{Value: wip.Percent}
+		fore   = Color{Value: wip.White}
+		back   = Color{Value: wip.Black}
+		width  = int64(wip.DefaultWidth)
+		mode   = Mode{Value: wip.Regular}
+		buffer = DefaultBufferSize
 	)
 	flag.Var(&kind, "k", "indicator type")
 	flag.Var(&fore, "f", "foreground color")
 	flag.Var(&back, "b", "background color")
 	flag.Var(&mode, "m", "mode")
 	flag.Int64Var(&width, "w", width, "bar width")
+	flag.IntVar(&buffer, "z", buffer, "buffer size")
 	flag.Parse()
 
-	for _, a := range flag.Args() {
-		options := MakeOptions(a, kind, back, fore, mode, width)
-		readFile(a, options)
+	filepath.Walk(flag.Arg(0), func(file string, i os.FileInfo, err error) error {
+		if err != nil || i.IsDir() {
+			return err
+		}
+		options := MakeOptions(file, kind, back, fore, mode, width)
+		readFile(file, buffer, options)
 		fmt.Println()
-	}
+		return nil
+	})
 }
 
-func readFile(a string, options []wip.Option) {
-	r, err := os.Open(a)
+func readFile(file string, buffer int, options []wip.Option) {
+	if buffer <= 0 {
+		buffer = DefaultBufferSize
+	}
+	r, err := os.Open(file)
 	if err != nil {
 		return
 	}
@@ -130,7 +141,7 @@ func readFile(a string, options []wip.Option) {
 	}
 
 	bar, _ := wip.New(i.Size(), options...)
-	io.CopyBuffer(bar, r, make([]byte, 1024))
+	io.CopyBuffer(bar, r, make([]byte, buffer))
 	bar.Complete()
 }
 
