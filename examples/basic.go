@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"io"
@@ -104,14 +105,16 @@ func main() {
 		back   = Color{Value: wip.Black}
 		width  = int64(wip.DefaultWidth)
 		mode   = Mode{Value: wip.Regular}
-		buffer = DefaultBufferSize
+		size   = DefaultBufferSize
+		buffer bool
 	)
 	flag.Var(&kind, "k", "indicator type")
 	flag.Var(&fore, "f", "foreground color")
 	flag.Var(&back, "b", "background color")
 	flag.Var(&mode, "m", "mode")
 	flag.Int64Var(&width, "w", width, "bar width")
-	flag.IntVar(&buffer, "z", buffer, "buffer size")
+	flag.IntVar(&size, "z", size, "buffer size")
+	flag.BoolVar(&buffer, "r", buffer, "bufferize reading")
 	flag.Parse()
 
 	filepath.Walk(flag.Arg(0), func(file string, i os.FileInfo, err error) error {
@@ -119,15 +122,15 @@ func main() {
 			return err
 		}
 		options := MakeOptions(file, kind, back, fore, mode, width)
-		readFile(file, buffer, options)
+		readFile(file, size, buffer, options)
 		fmt.Println()
 		return nil
 	})
 }
 
-func readFile(file string, buffer int, options []wip.Option) {
-	if buffer <= 0 {
-		buffer = DefaultBufferSize
+func readFile(file string, size int, buffer bool, options []wip.Option) {
+	if size <= 0 {
+		size = DefaultBufferSize
 	}
 	r, err := os.Open(file)
 	if err != nil {
@@ -140,8 +143,15 @@ func readFile(file string, buffer int, options []wip.Option) {
 		return
 	}
 
-	bar, _ := wip.New(i.Size(), options...)
-	io.CopyBuffer(bar, r, make([]byte, buffer))
+	bar, err := wip.New(i.Size(), options...)
+	if err != nil {
+		return
+	}
+	var rs io.Reader = r
+	if buffer {
+		rs = bufio.NewReader(rs)
+	}
+	io.CopyBuffer(bar, rs, make([]byte, size))
 	bar.Complete()
 }
 

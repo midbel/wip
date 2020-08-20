@@ -63,7 +63,13 @@ func WithSpace(c byte) Option {
 func WithLabel(label string) Option {
 	return func(b *Bar) error {
 		b.prolog = makeSlice(defaultPrologSize, space)
-		copy(b.prolog, label)
+		n := copy(b.prolog, label)
+		if n == len(b.prolog) {
+			for i := 0; i < 3; i++ {
+				n--
+				b.prolog[n] = '.'
+			}
+		}
 		return nil
 	}
 }
@@ -285,7 +291,9 @@ func (b *Bar) print() {
 		line.WriteByte(carriage)
 	}
 	b.writeProlog(&line)
+	line.WriteByte(' ')
 	b.writeProgress(&line)
+	line.WriteByte(' ')
 	b.writeEpilog(&line)
 	os.Stdout.Write(line.Bytes())
 }
@@ -330,13 +338,10 @@ func (b *Bar) writeEpilog(line *bytes.Buffer) {
 		tmp = formatSize(float64(b.tcn.Current()))
 	case Rate:
 		tmp = formatRate(b.tcn.Rate())
-		// tmp = strconv.AppendFloat(tmp, b.tcn.Rate(), 'f', 2, 64)
 	case Elapsed:
-		e := b.tcn.Elapsed()
-		tmp = []byte(e.String())
+		tmp = formatDuration(b.tcn.Elapsed())
 	case Remained:
-		e := b.tcn.Remained()
-		tmp = []byte(e.String())
+		tmp = formatDuration(b.tcn.Remained())
 	}
 	defer fillSlice(b.epilog, space)
 
@@ -567,7 +572,50 @@ func (s *state) Fraction() float64 {
 }
 
 func formatDuration(d time.Duration) []byte {
-	return nil
+	if d < time.Millisecond {
+		return []byte("0s")
+	}
+	tmp := make([]byte, 0, 64)
+	switch {
+	case d < time.Second:
+		millis := d.Milliseconds()
+		tmp = strconv.AppendInt(tmp, int64(millis), 10)
+		tmp = append(tmp, []byte("ms")...)
+	case d >= time.Second && d < time.Minute:
+		sec, ms := int64(d.Seconds()), d.Milliseconds()
+		ms -= sec * 1000
+		tmp = strconv.AppendInt(tmp, sec, 10)
+		tmp = append(tmp, '.')
+		if ms < 100 {
+			tmp = append(tmp, '0')
+		}
+		if ms < 10 {
+			tmp = append(tmp, '0')
+		}
+		tmp = strconv.AppendInt(tmp, ms, 10)
+		tmp = append(tmp, 's')
+	case d >= time.Minute && d < time.Hour:
+		min, sec := int64(d.Minutes()), int64(d.Seconds())
+		sec -= (min * 60)
+		tmp = strconv.AppendInt(tmp, min, 10)
+		tmp = append(tmp, '.')
+		if sec < 10 {
+			tmp = append(tmp, '0')
+		}
+		tmp = strconv.AppendInt(tmp, sec, 10)
+		tmp = append(tmp, 'm')
+	default:
+		hour, min := int64(d.Hours()), int64(d.Minutes())
+		min -= hour * 60
+		tmp = strconv.AppendInt(tmp, hour, 10)
+		tmp = append(tmp, 'h')
+		if min < 10 {
+			tmp = append(tmp, '0')
+		}
+		tmp = strconv.AppendInt(tmp, min, 10)
+		tmp = append(tmp, 'm')
+	}
+	return tmp
 }
 
 var units = [][]byte{
@@ -576,14 +624,15 @@ var units = [][]byte{
 	[]byte("GB"),
 }
 
+const kilo = 1024.0
+
 func formatSize(d float64) []byte {
 	var (
-		size  = 1024.0
-		coeff = size
-		tmp   = make([]byte, 0, 64)
+		size = kilo
+		tmp  = make([]byte, 0, 64)
 	)
 	format := func(size float64, unit []byte) []byte {
-		z := float64(d) / float64(size/coeff)
+		z := float64(d) / float64(size/kilo)
 		tmp = strconv.AppendFloat(tmp, z, 'f', 2, 64)
 		return append(tmp, unit...)
 	}
@@ -592,12 +641,12 @@ func formatSize(d float64) []byte {
 		return append(tmp, 'B')
 	}
 	for i := range units {
-		size *= coeff
+		size *= kilo
 		if d < size {
 			return format(size, units[i])
 		}
 	}
-	size *= coeff
+	size *= kilo
 	return format(size, []byte("TB"))
 }
 
